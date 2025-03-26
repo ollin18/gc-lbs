@@ -1,0 +1,92 @@
+{
+  "project": "job-accessibility",
+  "dataset": "lbs_latam",
+  "input_bucket": "lbs-laltam",
+  "output_bucket": "lbs-laltam",
+  "countries": {
+    "AR": {
+      "timezone": "America/Argentina/Buenos_Aires",
+      "stops": {
+        "distance_threshold": 20,
+        "time_threshold": 3600,
+        "min_stop_duration": 300000
+      },
+      "dbscan": {
+        "distance": 20,
+        "min_points": 2
+      },
+      "home_work": {
+        "home_min_days": 14,
+        "home_hour_evening": 19,
+        "home_hour_morning": 8,
+        "work_min_days": 8,
+        "work_hour_start": 9,
+        "work_hour_end": 18,
+        "min_distance_home_work": 50
+      }
+    },
+    "BR": {
+      "timezone": "America/Sao_Paulo",
+      "stops": {
+        "distance_threshold": 20,
+        "time_threshold": 3600,
+        "min_stop_duration": 300000
+      },
+      "dbscan": {
+        "distance": 20,
+        "min_points": 2
+      },
+      "home_work": {
+        "home_min_days": 14,
+        "home_hour_evening": 19,
+        "home_hour_morning": 8,
+        "work_min_days": 8,
+        "work_hour_start": 9,
+        "work_hour_end": 18,
+        "min_distance_home_work": 50
+      }
+    },
+    "CO": {
+      "timezone": "America/Bogota",
+      "stops": {
+        "distance_threshold": 20,
+        "time_threshold": 3600,
+        "min_stop_duration": 300000
+      },
+      "dbscan": {
+        "distance": 20,
+        "min_points": 2
+      },
+      "home_work": {
+        "home_min_days": 14,
+        "home_hour_evening": 19,
+        "home_hour_morning": 8,
+        "work_min_days": 8,
+        "work_hour_start": 9,
+        "work_hour_end": 18,
+        "min_distance_home_work": 50
+      }
+    },
+    "MX": {
+      "timezone": "America/Mexico_City",
+      "stops": {
+        "distance_threshold": 20,
+        "time_threshold": 3600,
+        "min_stop_duration": 300000
+      },
+      "dbscan": {
+        "distance": 20,
+        "min_points": 2
+      },
+      "home_work": {
+        "home_min_days": 14,
+        "home_hour_evening": 19,
+        "home_hour_morning": 8,
+        "work_min_days": 8,
+        "work_hour_start": 9,
+        "work_hour_end": 18,
+        "min_distance_home_work": 50
+      }
+    }
+  }
+}
