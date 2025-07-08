@@ -93,6 +93,7 @@ EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/${COUNTRY}/${YEAR}/part-*.parquet"
 echo "Loading data from $SOURCE_URI to $TABLE_NAME..."
 bq load \
   --source_format=PARQUET \
+  --autodetect \
   ${TABLE_NAME} \
   ${SOURCE_URI}
 
