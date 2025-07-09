@@ -1,19 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Default configuration
-PROJECT="job-accessibility"
-INPUT_BUCKET="lbs-laltam"
-OUTPUT_BUCKET="lbs-laltam"
-DATASET="lbs_latam"
-HOME_MIN_DAYS=14             # Minimum unique days for home location
-HOME_HOUR_EVENING=19         # Evening starts at 7PM
-HOME_HOUR_MORNING=8          # Morning ends at 8AM
-WORK_MIN_DAYS=8              # Minimum unique days for work location
-WORK_HOUR_START=9            # Work day starts at 9AM
-WORK_HOUR_END=18             # Work day ends at 6PM
-MIN_DISTANCE_HOME_WORK=50    # Minimum distance between home and work (meters)
-
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY"
@@ -96,6 +83,22 @@ if [ "$#" -ne 1 ]; then
 fi
 
 COUNTRY=$1
+
+# Check required config variables (injected via environment from run_pipeline.sh)
+: "${PROJECT:?Must set PROJECT}"
+: "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
+: "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
+: "${DATASET:?Must set DATASET}"
+
+: "${HOME_MIN_DAYS:?Must set HOME_MIN_DAYS}"
+: "${HOME_HOUR_EVENING:?Must set HOME_HOUR_EVENING}"
+: "${HOME_HOUR_MORNING:?Must set HOME_HOUR_MORNING}"
+
+: "${WORK_MIN_DAYS:?Must set WORK_MIN_DAYS}"
+: "${WORK_HOUR_START:?Must set WORK_HOUR_START}"
+: "${WORK_HOUR_END:?Must set WORK_HOUR_END}"
+
+: "${MIN_DISTANCE_HOME_WORK:?Must set MIN_DISTANCE_HOME_WORK}"
 
 echo "Running Home/Work Classification with configuration:"
 echo "Project: $PROJECT"
