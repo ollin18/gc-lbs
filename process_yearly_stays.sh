@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Default configuration
-PROJECT="job-accessibility"
-INPUT_BUCKET="lbs-laltam"
-OUTPUT_BUCKET="lbs-laltam"
-DATASET="lbs_latam"
-DISTANCE_THRESHOLD=20          # meters
-TIME_THRESHOLD=3600            # seconds (1 hour)
-MIN_STOP_DURATION=300000       # milliseconds (5 minutes)
-
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY YEAR"
@@ -24,6 +15,15 @@ show_help() {
   echo "  -h, --help                 Show this help message"
   exit 1
 }
+
+# Default configuration
+# PROJECT="job-accessibility"
+# INPUT_BUCKET="lbs-laltam"
+# OUTPUT_BUCKET="lbs-laltam"
+# DATASET="lbs_latam"
+# DISTANCE_THRESHOLD=20          # meters
+# TIME_THRESHOLD=3600            # seconds (1 hour)
+# MIN_STOP_DURATION=300000       # milliseconds (5 minutes)
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -73,6 +73,15 @@ fi
 
 COUNTRY=$1
 YEAR=$2
+
+# Check that required environment variables are set, or fail with a helpful message
+: "${PROJECT:?Must set PROJECT}"
+: "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
+: "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
+: "${DATASET:?Must set DATASET}"
+: "${DISTANCE_THRESHOLD:?Must set DISTANCE_THRESHOLD}"
+: "${TIME_THRESHOLD:?Must set TIME_THRESHOLD}"
+: "${MIN_STOP_DURATION:?Must set MIN_STOP_DURATION}"
 
 echo "Running process_yearly_stays with configuration:"
 echo "Project: $PROJECT"

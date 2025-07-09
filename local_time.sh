@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Default configuration
-PROJECT="job-accessibility"
-INPUT_BUCKET="lbs-laltam"
-OUTPUT_BUCKET="lbs-laltam"
-DATASET="lbs_latam"
-TZ_TABLE="${PROJECT}.${DATASET}.tz_codes"
-
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY DEFAULT_TIMEZONE"
@@ -64,6 +57,13 @@ fi
 
 COUNTRY=$1
 DEFAULT_TZ=$2
+
+# Check that required environment variables are set, or fail with a helpful message
+: "${PROJECT:?Must set PROJECT}"
+: "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
+: "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
+: "${DATASET:?Must set DATASET}"
+TZ_TABLE="${PROJECT}.${DATASET}.tz_codes"
 
 echo "Running Local Time Conversion with configuration:"
 echo "Project: $PROJECT"

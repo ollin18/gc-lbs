@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-# Default configuration
-PROJECT="job-accessibility"
-INPUT_BUCKET="lbs-laltam"
-OUTPUT_BUCKET="lbs-laltam"
-DATASET="lbs_latam"
-DBSCAN_DISTANCE=20        # meters
-DBSCAN_MIN_POINTS=2       # minimum points for a cluster
-
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY"
@@ -22,6 +14,14 @@ show_help() {
   echo "  -h, --help                 Show this help message"
   exit 1
 }
+
+# Default configuration
+# PROJECT="job-accessibility"
+# INPUT_BUCKET="lbs-laltam"
+# OUTPUT_BUCKET="lbs-laltam"
+# DATASET="lbs_latam"
+# DBSCAN_DISTANCE=20        # meters
+# DBSCAN_MIN_POINTS=2       # minimum points for a cluster
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -66,6 +66,14 @@ if [ "$#" -ne 1 ]; then
 fi
 
 COUNTRY=$1
+
+# Check that required environment variables are set, or fail with a helpful message
+: "${PROJECT:?Must set PROJECT}"
+: "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
+: "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
+: "${DATASET:?Must set DATASET}"
+: "${DBSCAN_DISTANCE:?Must set DBSCAN_DISTANCE}"
+: "${DBSCAN_MIN_POINTS:?Must set DBSCAN_MIN_POINTS}"
 
 echo "Running DBSCAN clustering with configuration:"
 echo "Project: $PROJECT"

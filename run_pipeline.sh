@@ -1,17 +1,75 @@
 #!/usr/bin/env bash
 set -e
 
-# Default configuration
-PROJECT="job-accessibility"
-INPUT_BUCKET="lbs-laltam"
-OUTPUT_BUCKET="lbs-laltam"
-DATASET="lbs_latam"
-
 # Step flags (all enabled by default)
 RUN_STOPS=true
 RUN_DBSCAN=true
 RUN_TIMEZONE=true
 RUN_HW=true
+
+# Parse command line options
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p|--project)
+      PROJECT="$2"
+      shift 2
+      ;;
+    -i|--input-bucket)
+      INPUT_BUCKET="$2"
+      shift 2
+      ;;
+    -o|--output-bucket)
+      OUTPUT_BUCKET="$2"
+      shift 2
+      ;;
+    -d|--dataset)
+      DATASET="$2"
+      shift 2
+      ;;
+    --skip-stops)
+      RUN_STOPS=false
+      shift
+      ;;
+    --skip-dbscan)
+      RUN_DBSCAN=false
+      shift
+      ;;
+    --skip-timezone)
+      RUN_TIMEZONE=false
+      shift
+      ;;
+    --skip-hw)
+      RUN_HW=false
+      shift
+      ;;
+    -h|--help)
+      show_help
+      ;;
+    -*)
+      echo "Unknown option: $1"
+      show_help
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Restore positional args
+set -- "${POSITIONAL_ARGS[@]}"
+
+# Validate positional arguments
+if [ $# -ne 3 ]; then
+  echo "Error: Must provide COUNTRY, YEAR, and TIMEZONE."
+  show_help
+fi
+
+COUNTRY="$1"
+YEAR="$2"
+TIMEZONE="$3"
 
 # Help function
 show_help() {
@@ -36,6 +94,41 @@ show_help() {
   echo "  -h, --help                 Show this help message"
   exit 1
 }
+
+CONFIG_FILE="pipeline_config.json"
+
+# Load global config
+PROJECT=$(jq -r '.project' "$CONFIG_FILE")
+INPUT_BUCKET=$(jq -r '.input_bucket' "$CONFIG_FILE")
+OUTPUT_BUCKET=$(jq -r '.output_bucket' "$CONFIG_FILE")
+DATASET=$(jq -r '.dataset' "$CONFIG_FILE")
+
+# Load country-specific config
+TIMEZONE=$(jq -r ".countries.${COUNTRY}.timezone" "$CONFIG_FILE")
+
+# Stops parameters
+DISTANCE_THRESHOLD=$(jq -r ".countries.${COUNTRY}.stops.distance_threshold" "$CONFIG_FILE")
+TIME_THRESHOLD=$(jq -r ".countries.${COUNTRY}.stops.time_threshold" "$CONFIG_FILE")
+MIN_STOP_DURATION=$(jq -r ".countries.${COUNTRY}.stops.min_stop_duration" "$CONFIG_FILE")
+
+# DBSCAN parameters
+DBSCAN_DISTANCE=$(jq -r ".countries.${COUNTRY}.dbscan.distance" "$CONFIG_FILE")
+DBSCAN_MIN_POINTS=$(jq -r ".countries.${COUNTRY}.dbscan.min_points" "$CONFIG_FILE")
+
+# Home/Work parameters
+HOME_MIN_DAYS=$(jq -r ".countries.${COUNTRY}.home_work.home_min_days" "$CONFIG_FILE")
+HOME_HOUR_EVENING=$(jq -r ".countries.${COUNTRY}.home_work.home_hour_evening" "$CONFIG_FILE")
+HOME_HOUR_MORNING=$(jq -r ".countries.${COUNTRY}.home_work.home_hour_morning" "$CONFIG_FILE")
+WORK_MIN_DAYS=$(jq -r ".countries.${COUNTRY}.home_work.work_min_days" "$CONFIG_FILE")
+WORK_HOUR_START=$(jq -r ".countries.${COUNTRY}.home_work.work_hour_start" "$CONFIG_FILE")
+WORK_HOUR_END=$(jq -r ".countries.${COUNTRY}.home_work.work_hour_end" "$CONFIG_FILE")
+MIN_DISTANCE_HOME_WORK=$(jq -r ".countries.${COUNTRY}.home_work.min_distance_home_work" "$CONFIG_FILE")
+
+export PROJECT INPUT_BUCKET OUTPUT_BUCKET DATASET
+export DISTANCE_THRESHOLD TIME_THRESHOLD MIN_STOP_DURATION
+export DBSCAN_DISTANCE DBSCAN_MIN_POINTS
+export HOME_MIN_DAYS HOME_HOUR_EVENING HOME_HOUR_MORNING
+export WORK_MIN_DAYS WORK_HOUR_START WORK_HOUR_END MIN_DISTANCE_HOME_WORK
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -80,16 +173,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-# Check if required arguments are provided
-if [ "$#" -ne 3 ]; then
-  echo "Error: COUNTRY, YEAR, and TIMEZONE arguments are required"
-  show_help
-fi
-
-COUNTRY=$1
-YEAR=$2
-TIMEZONE=$3
 
 echo "=========================================================="
 echo "LBS Data Processing Pipeline"
