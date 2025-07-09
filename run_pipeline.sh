@@ -7,6 +7,30 @@ RUN_DBSCAN=true
 RUN_TIMEZONE=true
 RUN_HW=true
 
+# Help function
+show_help() {
+  echo "Usage: $0 [options] COUNTRY YEAR TIMEZONE"
+  echo
+  echo "Runs the complete LBS data processing pipeline for a country and year."
+  echo
+  echo "Arguments:"
+  echo "  COUNTRY    Country code (e.g., CO for Colombia)"
+  echo "  YEAR       Year to process (e.g., 2022)"
+  echo "  TIMEZONE   Default timezone (e.g., America/Bogota)"
+  echo
+  echo "Options:"
+  echo "  -p, --project PROJECT      Google Cloud project ID (default: $PROJECT)"
+  echo "  -i, --input-bucket BUCKET  Input GCS bucket (default: $INPUT_BUCKET)"
+  echo "  -o, --output-bucket BUCKET Output GCS bucket (default: $OUTPUT_BUCKET)"
+  echo "  -d, --dataset DATASET      BigQuery dataset name (default: $DATASET)"
+  echo "  --skip-stops               Skip the stops detection step"
+  echo "  --skip-dbscan              Skip the DBSCAN clustering step"
+  echo "  --skip-timezone            Skip the timezone conversion step"
+  echo "  --skip-hw                  Skip the home/work classification step"
+  echo "  -h, --help                 Show this help message"
+  exit 1
+}
+
 # Parse command line options
 POSITIONAL_ARGS=()
 
@@ -71,29 +95,6 @@ COUNTRY="$1"
 YEAR="$2"
 TIMEZONE="$3"
 
-# Help function
-show_help() {
-  echo "Usage: $0 [options] COUNTRY YEAR TIMEZONE"
-  echo
-  echo "Runs the complete LBS data processing pipeline for a country and year."
-  echo
-  echo "Arguments:"
-  echo "  COUNTRY    Country code (e.g., CO for Colombia)"
-  echo "  YEAR       Year to process (e.g., 2022)"
-  echo "  TIMEZONE   Default timezone (e.g., America/Bogota)"
-  echo
-  echo "Options:"
-  echo "  -p, --project PROJECT      Google Cloud project ID (default: $PROJECT)"
-  echo "  -i, --input-bucket BUCKET  Input GCS bucket (default: $INPUT_BUCKET)"
-  echo "  -o, --output-bucket BUCKET Output GCS bucket (default: $OUTPUT_BUCKET)"
-  echo "  -d, --dataset DATASET      BigQuery dataset name (default: $DATASET)"
-  echo "  --skip-stops               Skip the stops detection step"
-  echo "  --skip-dbscan              Skip the DBSCAN clustering step"
-  echo "  --skip-timezone            Skip the timezone conversion step"
-  echo "  --skip-hw                  Skip the home/work classification step"
-  echo "  -h, --help                 Show this help message"
-  exit 1
-}
 
 CONFIG_FILE="pipeline_config.json"
 
