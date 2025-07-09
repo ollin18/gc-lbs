@@ -1,3 +1,8 @@
+# This script queries the Google BigQuery database to retrieve home and work
+# locations
+# We need to install the pandas-gbq package.
+# It will authenticate in a browser window.
+# pip install pandas-gbq --upgrade
 import pandas_gbq as pd_gbq
 
 query = """
@@ -35,7 +40,6 @@ SELECT
 FROM home_locations h
 LEFT JOIN work_locations w
   ON h.uid = w.uid AND h.year = w.year
--- Only return users with a home location
 WHERE h.uid IS NOT NULL AND h.home_latitude IS NOT NULL AND w.work_latitude IS
 NOT NULL
 ORDER BY h.uid, h.year
