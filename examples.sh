@@ -22,3 +22,7 @@ bash get_hw.sh \
   -we 19 \
   -md 100 \
   CO
+
+# Can run help with --help flag
+bash get_hw.sh --help
+bash run_pipeline.sh --help
