@@ -58,7 +58,7 @@ fi
 COUNTRY=$1
 DEFAULT_TZ=$2
 
-# Check that required environment variables are set, or fail with a helpful message
+# vars from environment or defaults
 : "${PROJECT:?Must set PROJECT}"
 : "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
 : "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
@@ -72,7 +72,7 @@ echo "Country: $COUNTRY"
 echo "Default Timezone: $DEFAULT_TZ"
 echo "Timezone Table: $TZ_TABLE"
 
-# Build table names and paths
+# Build paths
 TNAME="${COUNTRY}_clustered_stops"
 TABLE_NAME="${DATASET}.${TNAME}"
 SOURCE_URI="gs://${INPUT_BUCKET}/stops/clusters/${COUNTRY}/*.parquet"
@@ -85,6 +85,7 @@ bq load \
   ${TABLE_NAME} \
   ${SOURCE_URI}
 
+#query
 QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (
@@ -147,7 +148,7 @@ EOF
 echo "Running timezone conversion query..."
 bq query --use_legacy_sql=false "$QUERY"
 
-# Create the local times table
+# Create the table
 LOCAL_TNAME="${COUNTRY}_local"
 LOCAL_TABLE_NAME="${DATASET}.${LOCAL_TNAME}"
 LOCAL_URI="gs://${OUTPUT_BUCKET}/stops/local/${COUNTRY}/*.parquet"

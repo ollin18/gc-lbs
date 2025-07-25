@@ -67,7 +67,7 @@ fi
 
 COUNTRY=$1
 
-# Check that required environment variables are set, or fail with a helpful message
+# Check that required environment variables are set, or fail with message
 : "${PROJECT:?Must set PROJECT}"
 : "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
 : "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
@@ -82,7 +82,7 @@ echo "Country: $COUNTRY"
 echo "DBSCAN distance threshold: $DBSCAN_DISTANCE meters"
 echo "DBSCAN minimum points: $DBSCAN_MIN_POINTS"
 
-# Build table names and paths
+# Set vars
 TNAME="${COUNTRY}_stops"
 TABLE_NAME="${DATASET}.${TNAME}"
 SOURCE_URI="gs://${INPUT_BUCKET}/stops/${COUNTRY}/*.parquet"
@@ -95,7 +95,7 @@ bq load \
   ${TABLE_NAME} \
   ${SOURCE_URI}
 
-# Build the query using a here-document
+# query
 QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (

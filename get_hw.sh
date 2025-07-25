@@ -84,7 +84,7 @@ fi
 
 COUNTRY=$1
 
-# Check required config variables (injected via environment from run_pipeline.sh)
+# Check required config variables (from environment file when running from run_pipeline.sh)
 : "${PROJECT:?Must set PROJECT}"
 : "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
 : "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
@@ -114,11 +114,12 @@ echo "  - Work start: $WORK_HOUR_START"
 echo "  - Work end: $WORK_HOUR_END"
 echo "  - Min distance from home: $MIN_DISTANCE_HOME_WORK meters"
 
-# Build table names and paths
+# Build paths
 TNAME="${COUNTRY}_local"
 TABLE="${PROJECT}.${DATASET}.${TNAME}"
 EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/HW/${COUNTRY}/part-*.parquet"
 
+# query
 QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (
