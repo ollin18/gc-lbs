@@ -74,7 +74,7 @@ fi
 COUNTRY=$1
 YEAR=$2
 
-# Check that required environment variables are set, or fail with a helpful message
+# Check vars
 : "${PROJECT:?Must set PROJECT}"
 : "${INPUT_BUCKET:?Must set INPUT_BUCKET}"
 : "${OUTPUT_BUCKET:?Must set OUTPUT_BUCKET}"
@@ -92,7 +92,7 @@ echo "Distance threshold: $DISTANCE_THRESHOLD meters"
 echo "Time threshold: $TIME_THRESHOLD seconds"
 echo "Minimum stop duration: $MIN_STOP_DURATION ms"
 
-# Build table names and paths
+# Build paths
 TNAME="${COUNTRY}${YEAR}"
 TABLE_NAME="${DATASET}.${TNAME}"
 SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.parquet"
@@ -106,7 +106,7 @@ bq load \
   ${TABLE_NAME} \
   ${SOURCE_URI}
 
-# Build the query using a here-document
+#query
 QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (
