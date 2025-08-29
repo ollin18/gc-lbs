@@ -107,7 +107,6 @@ OPTIONS (
 AS
 
 WITH
--- Initial clustering of points
 clustered AS (
   SELECT
     device_id,
@@ -117,15 +116,55 @@ clustered AS (
     median_latitude,
     median_longitude,
     (end_timestamp / 1000 - start_timestamp / 1000) AS stop_duration,
-    -- Use IFNULL to explicitly handle NULL values from ST_CLUSTERDBSCAN
     IFNULL(
       ST_CLUSTERDBSCAN(ST_GEOGPOINT(median_longitude, median_latitude), ${DBSCAN_DISTANCE}, ${DBSCAN_MIN_POINTS})
       OVER (PARTITION BY device_id),
       -1
-    ) AS cluster_label
+    ) AS raw_cluster_label
   FROM \`${TABLE}\`
 ),
--- Use window functions to calculate aggregates in a single pass
+
+-- Calculate cluster centroids and make labels deterministic
+cluster_centroids AS (
+  SELECT
+    device_id,
+    raw_cluster_label,
+    AVG(median_latitude) AS centroid_lat,
+    AVG(median_longitude) AS centroid_lon,
+    COUNT(*) AS cluster_size
+  FROM clustered
+  WHERE raw_cluster_label >= 0  -- Only for actual clusters, not noise
+  GROUP BY device_id, raw_cluster_label
+),
+
+-- Create deterministic cluster labels
+deterministic_labels AS (
+  SELECT
+    device_id,
+    raw_cluster_label,
+    centroid_lat,
+    centroid_lon,
+    cluster_size,
+    DENSE_RANK() OVER (
+      PARTITION BY device_id
+      ORDER BY centroid_lat, centroid_lon
+    ) - 1 AS cluster_label  -- Start from 0
+  FROM cluster_centroids
+),
+
+-- Join back with original data and assign new labels
+with_deterministic_labels AS (
+  SELECT
+    c.*,
+    CASE
+      WHEN c.raw_cluster_label = -1 THEN -1
+      ELSE COALESCE(d.cluster_label, -1)
+    END AS cluster_label
+  FROM clustered c
+  LEFT JOIN deterministic_labels d
+    ON c.device_id = d.device_id AND c.raw_cluster_label = d.raw_cluster_label
+),
+
 with_stats AS (
   SELECT
     device_id AS uid,
@@ -136,7 +175,6 @@ with_stats AS (
     median_latitude AS stop_latitude,
     median_longitude AS stop_longitude,
     cluster_label,
-    -- Calculate cluster counts using window function
     -- Assign cluster_counts=1 for cluster_label=-1
     CASE
       WHEN cluster_label = -1 THEN 1
@@ -152,10 +190,23 @@ with_stats AS (
       WHEN cluster_label = -1 THEN median_longitude
       ELSE PERCENTILE_CONT(median_longitude, 0.5) OVER (PARTITION BY device_id, cluster_label)
     END AS cluster_longitude
-  FROM clustered
+  FROM with_deterministic_labels
+),
+
+final_deduplicated AS (
+  SELECT * FROM (
+    SELECT *,
+      ROW_NUMBER() OVER (
+        PARTITION BY uid, stop_event
+        ORDER BY start_timestamp
+      ) as row_num
+    FROM with_stats
+  )
+  WHERE row_num = 1
 )
-SELECT *
-FROM with_stats
+
+SELECT * EXCEPT(row_num)
+FROM final_deduplicated
 ORDER BY uid, cluster_label, start_timestamp;
 EOF
 )
