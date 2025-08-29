@@ -89,11 +89,16 @@ SOURCE_URI="gs://${INPUT_BUCKET}/stops/${COUNTRY}/*.parquet"
 TABLE="${PROJECT}.${DATASET}.${TNAME}"
 EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/clusters/${COUNTRY}/part-*.parquet"
 
+
+TNAME="${COUNTRY}_HW"
+TABLE="${PROJECT}.${DATASET}.${TNAME}"
+EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/dbscanfix/${COUNTRY}/part-*.parquet"
+
 echo "Loading data from $SOURCE_URI to $TABLE_NAME..."
-bq load \
-  --source_format=PARQUET \
-  ${TABLE_NAME} \
-  ${SOURCE_URI}
+# bq load \
+#   --source_format=PARQUET \
+#   ${TABLE_NAME} \
+#   ${SOURCE_URI}
 
 # query
 QUERY=$(cat <<EOF
@@ -106,61 +111,88 @@ OPTIONS (
 )
 AS
 
-WITH
--- Initial clustering of points
-clustered AS (
-  SELECT
-    device_id,
-    stop_events,
-    (start_timestamp / 1000) AS start_timestamp,
-    (end_timestamp / 1000) AS end_timestamp,
-    median_latitude,
-    median_longitude,
-    (end_timestamp / 1000 - start_timestamp / 1000) AS stop_duration,
-    -- Use IFNULL to explicitly handle NULL values from ST_CLUSTERDBSCAN
-    IFNULL(
-      ST_CLUSTERDBSCAN(ST_GEOGPOINT(median_longitude, median_latitude), ${DBSCAN_DISTANCE}, ${DBSCAN_MIN_POINTS})
-      OVER (PARTITION BY device_id),
-      -1
-    ) AS cluster_label
-  FROM \`${TABLE}\`
+WITH clustered AS (
+  SELECT * EXCEPT(cluster_label, cluster_counts, cluster_latitude, cluster_longitude),
+    -- Cluster stops using DBSCAN on the median coordinates (labels are scoped per uid).
+    ST_CLUSTERDBSCAN(
+      ST_GEOGPOINT(median_longitude, median_latitude),
+      ${DBSCAN_DISTANCE},      -- eps (meters)
+      ${DBSCAN_MIN_POINTS}     -- min_points
+    ) OVER (PARTITION BY uid) AS cluster_label
+  FROM `${TABLE}`
 ),
--- Use window functions to calculate aggregates in a single pass
-with_stats AS (
-  SELECT
-    device_id AS uid,
-    stop_events AS stop_event,
-    start_timestamp,
-    end_timestamp,
-    stop_duration,
-    median_latitude AS stop_latitude,
-    median_longitude AS stop_longitude,
-    cluster_label,
-    -- Calculate cluster counts using window function
-    -- Assign cluster_counts=1 for cluster_label=-1
-    CASE
-      WHEN cluster_label = -1 THEN 1
-      ELSE COUNT(*) OVER (PARTITION BY device_id, cluster_label)
-    END AS cluster_counts,
-    -- Calculate median coordinates within each cluster
-    -- For cluster_label=-1, use the original coordinates
-    CASE
-      WHEN cluster_label = -1 THEN median_latitude
-      ELSE PERCENTILE_CONT(median_latitude, 0.5) OVER (PARTITION BY device_id, cluster_label)
-    END AS cluster_latitude,
-    CASE
-      WHEN cluster_label = -1 THEN median_longitude
-      ELSE PERCENTILE_CONT(median_longitude, 0.5) OVER (PARTITION BY device_id, cluster_label)
-    END AS cluster_longitude
+
+valid_stops AS (
+  -- Filter out stops shorter than the threshold (seconds).
+  SELECT *
   FROM clustered
+  WHERE stop_duration >= ${MIN_STOP_DURATION}
+),
+
+cluster_stats AS (
+  -- One row per (uid, cluster_label) with counts and an aggregate cluster center
+  SELECT
+    uid,
+    cluster_label,                           -- NOTE: includes NULL for noise; that won't match in the join
+    COUNT(*) AS cluster_counts,
+    APPROX_QUANTILES(median_latitude, 100)[OFFSET(50)]  AS cluster_latitude,
+    APPROX_QUANTILES(median_longitude, 100)[OFFSET(50)] AS cluster_longitude
+  FROM valid_stops
+  GROUP BY uid, cluster_label
 )
-SELECT *
-FROM with_stats
-ORDER BY uid, cluster_label, start_timestamp;
+
+SELECT
+  v.uid,
+  v.stop_event,
+  v.start_timestamp,
+  v.end_timestamp,
+  v.stop_duration,
+  v.stop_latitude,
+  v.stop_longitude,
+  v.timezone,
+  v.inputed_timezone,
+  v.stop_datetime,
+  v.end_stop_datetime,
+  v.date,
+  v.year,
+  v.month,
+  v.day,
+  v.hour,
+  v.weekday,
+  v.weekend,
+  v,end_date,
+
+  -- If no cluster_stats match (noise: cluster_label IS NULL), fallback to -1 and singletons
+  IFNULL(cs.cluster_label, -1) AS cluster_label,
+  IFNULL(cs.cluster_counts, 1) AS cluster_counts,
+  IFNULL(cs.cluster_latitude,  v.median_latitude)  AS cluster_latitude,
+  IFNULL(cs.cluster_longitude, v.median_longitude) AS cluster_longitude
+
+FROM valid_stops v
+LEFT JOIN cluster_stats cs
+  ON v.uid = cs.uid
+ AND v.cluster_label = cs.cluster_label
+
+ORDER BY uid, start_timestamp;
 EOF
 )
 
 echo "Processing DBSCAN clustering..."
 bq query --use_legacy_sql=false "$QUERY"
 
+# Create the final HW table
+
+COUNTRY="CO"
+DATASET="lbs_latam"
+OUTPUT_BUCKET="lbs-laltam"
+HW_TNAME="${COUNTRY}_dbscanfix"
+HW_TABLE_NAME="${DATASET}.${HW_TNAME}"
+HW_URI="gs://${OUTPUT_BUCKET}/stops/dbscanfix/${COUNTRY}/*.parquet"
+echo ${HW_URI}
+
+echo "Loading home/work data from $HW_URI to $HW_TABLE_NAME..."
+bq load \
+  --source_format=PARQUET \
+  ${HW_TABLE_NAME} \
+  ${HW_URI}
 echo "Completed DBSCAN clustering for ${COUNTRY}"

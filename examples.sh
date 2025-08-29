@@ -14,15 +14,25 @@ bash get_hw.sh \
   -d "lbs_latam" \
   -i "lbs-laltam" \
   -o "lbs_laltam" \
-  -hd 10 \
-  -wd 5 \
-  -he 20 \
-  -hm 7 \
-  -ws 8 \
-  -we 19 \
-  -md 100 \
+  -hd 2 \
+  -wd 2 \
+  -he 19 \
+  -hm 8 \
+  -ws 9 \
+  -we 18 \
+  -md 50 \
   CO
 
 # Can run help with --help flag
 bash get_hw.sh --help
 bash run_pipeline.sh --help
+
+bash dbscan.sh \
+  -p "job-accessibility" \
+  -d "lbs_latam" \
+  -i "lbs-laltam" \
+  -o "lbs_laltam" \
+  -dd 20 \
+  -mp 2 \
+  CO
+

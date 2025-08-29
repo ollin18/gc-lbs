@@ -115,9 +115,9 @@ echo "  - Work end: $WORK_HOUR_END"
 echo "  - Min distance from home: $MIN_DISTANCE_HOME_WORK meters"
 
 # Build paths
-TNAME="${COUNTRY}_local"
+TNAME="${COUNTRY}_dbscanfix"
 TABLE="${PROJECT}.${DATASET}.${TNAME}"
-EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/HW/${COUNTRY}/part-*.parquet"
+EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/HWrelaxed/${COUNTRY}/part-*.parquet"
 
 # query
 QUERY=$(cat <<EOF
@@ -133,7 +133,7 @@ AS
 WITH
 -- Base table with all data
 base AS (
-  SELECT *
+  SELECT * --EXCEPT(location_type, location_label)
   FROM \`${TABLE}\`
   WHERE cluster_label >= 0  -- Only consider actual clusters (excluding singletons)
 ),
@@ -364,9 +364,9 @@ echo "Running home/work classification query..."
 bq query --use_legacy_sql=false "$QUERY"
 
 # Create the final HW table
-HW_TNAME="${COUNTRY}_HW"
+HW_TNAME="${COUNTRY}_HW_relaxed"
 HW_TABLE_NAME="${DATASET}.${HW_TNAME}"
-HW_URI="gs://${OUTPUT_BUCKET}/stops/HW/${COUNTRY}/*.parquet"
+HW_URI="gs://${OUTPUT_BUCKET}/stops/HWrelaxed/${COUNTRY}/*.parquet"
 
 echo "Loading home/work data from $HW_URI to $HW_TABLE_NAME..."
 bq load \
