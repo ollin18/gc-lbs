@@ -182,13 +182,13 @@ bq query --use_legacy_sql=false "$QUERY"
 
 # Create the final HW table
 
-COUNTRY="CO"
-DATASET="lbs_latam"
-OUTPUT_BUCKET="lbs-laltam"
-HW_TNAME="${COUNTRY}_dbscanfix"
-HW_TABLE_NAME="${DATASET}.${HW_TNAME}"
-HW_URI="gs://${OUTPUT_BUCKET}/stops/dbscanfix/${COUNTRY}/*.parquet"
-echo ${HW_URI}
+# COUNTRY="AR"
+# DATASET="lbs_latam"
+# OUTPUT_BUCKET="lbs-laltam"
+# HW_TNAME="${COUNTRY}_dbscanfix"
+# HW_TABLE_NAME="${DATASET}.${HW_TNAME}"
+# HW_URI="gs://${OUTPUT_BUCKET}/stops/dbscanfix/${COUNTRY}/*.parquet"
+# echo ${HW_URI}
 
 echo "Loading home/work data from $HW_URI to $HW_TABLE_NAME..."
 bq load \
@@ -196,3 +196,22 @@ bq load \
   ${HW_TABLE_NAME} \
   ${HW_URI}
 echo "Completed DBSCAN clustering for ${COUNTRY}"
+
+# Do the same for MX and BR in a for loop
+# for COUNTRY in "BR" "MX"
+# do
+# DATASET="lbs_latam"
+# OUTPUT_BUCKET="lbs-laltam"
+# HW_TNAME="${COUNTRY}_dbscanfix"
+# HW_TABLE_NAME="${DATASET}.${HW_TNAME}"
+# HW_URI="gs://${OUTPUT_BUCKET}/stops/dbscanfix/${COUNTRY}/*.parquet"
+# echo ${HW_URI}
+#
+# echo "Loading home/work data from $HW_URI to $HW_TABLE_NAME..."
+# bq load \
+#   --source_format=PARQUET \
+#   ${HW_TABLE_NAME} \
+#   ${HW_URI}
+# echo "Completed DBSCAN clustering for ${COUNTRY}"
+# done
+#

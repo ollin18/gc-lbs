@@ -133,7 +133,7 @@ AS
 WITH
 -- Base table with all data
 base AS (
-  SELECT * --EXCEPT(location_type, location_label)
+  SELECT * EXCEPT(location_type, location_label)
   FROM \`${TABLE}\`
   WHERE cluster_label >= 0  -- Only consider actual clusters (excluding singletons)
 ),
