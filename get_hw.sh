@@ -131,14 +131,11 @@ OPTIONS (
 AS
 
 WITH
--- Base table with all data
 base AS (
   SELECT *
   FROM \`${TABLE}\`
-  WHERE cluster_label >= 0  -- Only consider actual clusters (excluding singletons)
 ),
 
--- Count unique days each cluster is visited
 cluster_day_counts AS (
   SELECT
     uid,
@@ -146,11 +143,10 @@ cluster_day_counts AS (
     cluster_label,
     COUNT(DISTINCT date) AS unique_days_visited
   FROM base
+  WHERE cluster_label >= 0  -- MOVED filter here - only for counting
   GROUP BY uid, year, cluster_label
 ),
 
--- Identify potential home locations based on visits during home hours
--- Home hours: weekends + weekdays between evening and morning
 home_candidates AS (
   SELECT
     uid,
@@ -159,16 +155,15 @@ home_candidates AS (
     cluster_latitude,
     cluster_longitude,
     COUNT(*) AS home_time_visits,
-    -- Also count the number of unique days visited during home hours
     COUNT(DISTINCT date) AS home_time_unique_days
   FROM base
   WHERE
-    (weekend = TRUE) OR  -- Weekends any time
-    (weekend = FALSE AND (hour >= ${HOME_HOUR_EVENING} OR hour < ${HOME_HOUR_MORNING}))  -- Weekdays during home hours
+    cluster_label >= 0 AND  -- ADD filter here - exclude noise from home detection
+    ((weekend = TRUE) OR  -- Weekends any time
+    (weekend = FALSE AND (hour >= ${HOME_HOUR_EVENING} OR hour < ${HOME_HOUR_MORNING})))  -- Weekdays during home hours
   GROUP BY uid, year, cluster_label, cluster_latitude, cluster_longitude
 ),
 
--- Identify home locations with highest home-time visits that meet minimum unique days threshold
 home_locations AS (
   SELECT
     h.*,
@@ -183,7 +178,6 @@ home_locations AS (
   WHERE dc.unique_days_visited >= ${HOME_MIN_DAYS}  -- Must be visited at least N different days
 ),
 
--- Only keep the top ranked home location for each uid/year
 final_home_locations AS (
   SELECT
     uid,
@@ -197,8 +191,6 @@ final_home_locations AS (
   WHERE home_rank = 1
 ),
 
--- Identify potential work locations based on visits during work hours
--- Work hours: weekdays between work_start and work_end
 work_candidates AS (
   SELECT
     uid,
@@ -207,15 +199,14 @@ work_candidates AS (
     cluster_latitude,
     cluster_longitude,
     COUNT(*) AS work_time_visits,
-    -- Also count the number of unique days visited during work hours
     COUNT(DISTINCT date) AS work_time_unique_days
   FROM base
   WHERE
+    cluster_label >= 0 AND  -- ADD filter here - exclude noise from work detection
     weekend = FALSE AND hour >= ${WORK_HOUR_START} AND hour <= ${WORK_HOUR_END}  -- Weekdays during work hours
   GROUP BY uid, year, cluster_label, cluster_latitude, cluster_longitude
 ),
 
--- Join with home locations to exclude home clusters
 work_candidates_filtered AS (
   SELECT
     w.*,
@@ -236,7 +227,6 @@ work_candidates_filtered AS (
     ON w.uid = h.uid AND w.year = h.year
 ),
 
--- Identify work locations with highest work-time visits that meet criteria
 work_locations AS (
   SELECT
     uid,
@@ -255,7 +245,6 @@ work_locations AS (
     distance_from_home >= ${MIN_DISTANCE_HOME_WORK}
 ),
 
--- Only keep the top ranked work location for each uid/year
 final_work_locations AS (
   SELECT
     uid,
@@ -268,16 +257,16 @@ final_work_locations AS (
   WHERE work_rank = 1
 ),
 
--- Assign location type labels and compute location change labels
 location_type_assignment AS (
   SELECT
     b.*,
     CASE
+      WHEN b.cluster_label = -1 THEN 'O'  -- Noise points are always 'Other'
       WHEN h.home_cluster_label IS NOT NULL AND b.cluster_label = h.home_cluster_label THEN 'H'
       WHEN w.work_cluster_label IS NOT NULL AND b.cluster_label = w.work_cluster_label THEN 'W'
       ELSE 'O'
     END AS location_type
-  FROM base b
+  FROM base b  -- Now includes ALL records
   LEFT JOIN final_home_locations h
     ON b.uid = h.uid AND b.year = h.year AND b.cluster_label = h.home_cluster_label
   LEFT JOIN final_work_locations w
@@ -308,14 +297,15 @@ location_changes AS (
       ELSE -1
     END AS work_change_rank
   FROM location_type_assignment
+  WHERE cluster_label >= 0  -- Only track changes for actual clusters
   GROUP BY uid, location_type, cluster_label, year
 ),
 
--- Final combined result
 final_result AS (
   SELECT
     t.*,
     CASE
+      WHEN t.cluster_label = -1 THEN -1  -- Noise points get -1 location_label
       WHEN t.location_type = 'H' THEN c.home_change_rank
       WHEN t.location_type = 'W' THEN c.work_change_rank
       ELSE -1
@@ -328,7 +318,6 @@ final_result AS (
     AND t.year = c.year
 )
 
--- Select all original columns plus the new ones
 SELECT
   uid,
   stop_event,

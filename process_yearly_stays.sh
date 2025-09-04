@@ -125,7 +125,6 @@ WITH base AS (
     timestamp
   FROM \`${TABLE}\`
 ),
-
 ordered_base AS (
   SELECT
     device_id,
@@ -138,7 +137,6 @@ ordered_base AS (
   FROM base
   WINDOW w AS (PARTITION BY device_id ORDER BY timestamp)
 ),
-
 calc AS (
   SELECT
     device_id,
@@ -154,7 +152,6 @@ calc AS (
     CASE WHEN next_timestamp IS NOT NULL THEN (next_timestamp - timestamp) / 1000 ELSE NULL END AS time_diff
   FROM ordered_base
 ),
-
 flags AS (
   SELECT
     device_id,
@@ -168,7 +165,6 @@ flags AS (
     (distance <= ${DISTANCE_THRESHOLD} AND (time_diff <= ${TIME_THRESHOLD} OR time_diff IS NULL)) AS stationary
   FROM calc
 ),
-
 events AS (
   SELECT
     device_id,
@@ -183,7 +179,6 @@ events AS (
   FROM flags
   WINDOW w AS (PARTITION BY device_id ORDER BY timestamp)
 ),
-
 cumulative AS (
   SELECT
     device_id,
@@ -195,7 +190,6 @@ cumulative AS (
   FROM events
   WINDOW w AS (PARTITION BY device_id ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
 ),
-
 stationary_points AS (
   SELECT
     device_id,
@@ -206,8 +200,7 @@ stationary_points AS (
   FROM cumulative
   WHERE stationary = TRUE AND event_id > 0
 ),
-
-stops AS (
+initial_stops AS (
   SELECT
     device_id,
     event_id AS stop_id,
@@ -217,20 +210,46 @@ stops AS (
     APPROX_QUANTILES(longitude, 100)[OFFSET(50)] AS median_longitude
   FROM stationary_points
   GROUP BY device_id, event_id
-  HAVING (MAX(timestamp) - MIN(timestamp)) >= ${MIN_STOP_DURATION}  -- Only valid stops > minimum duration
+  HAVING (MAX(timestamp) - MIN(timestamp)) >= ${MIN_STOP_DURATION}
 ),
-
+-- Filter points to remove outliers based on distance to median
+filtered_points AS (
+  SELECT
+    sp.device_id,
+    sp.timestamp,
+    sp.latitude,
+    sp.longitude,
+    sp.event_id
+  FROM stationary_points sp
+  JOIN initial_stops ist
+    ON sp.device_id = ist.device_id
+    AND sp.event_id = ist.stop_id
+  WHERE ST_DISTANCE(
+    ST_GEOGPOINT(sp.longitude, sp.latitude),
+    ST_GEOGPOINT(ist.median_longitude, ist.median_latitude)
+  ) <= ${DISTANCE_THRESHOLD}
+),
+stops AS (
+  SELECT
+    device_id,
+    event_id AS stop_id,
+    MIN(timestamp) AS start_timestamp,
+    MAX(timestamp) AS end_timestamp,
+    APPROX_QUANTILES(latitude, 100)[OFFSET(50)] AS median_latitude,
+    APPROX_QUANTILES(longitude, 100)[OFFSET(50)] AS median_longitude
+  FROM filtered_points
+  GROUP BY device_id, event_id
+  HAVING (MAX(timestamp) - MIN(timestamp)) >= ${MIN_STOP_DURATION}  -- check again after filtering
+),
 deduped_stops AS (
   SELECT DISTINCT *
   FROM stops
 ),
-
 final_stops AS (
   SELECT *,
          ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY start_timestamp) AS stop_events
   FROM deduped_stops
 )
-
 SELECT
 *
 FROM final_stops
