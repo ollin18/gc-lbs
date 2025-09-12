@@ -58,10 +58,10 @@
         "min_points": 2
       },
       "home_work": {
-        "home_min_days": 14,
+        "home_min_days": 2,
         "home_hour_evening": 19,
         "home_hour_morning": 8,
-        "work_min_days": 8,
+        "work_min_days": 2,
         "work_hour_start": 9,
         "work_hour_end": 18,
         "min_distance_home_work": 50

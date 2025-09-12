@@ -28,7 +28,8 @@ bash get_hw.sh --help
 bash run_pipeline.sh --help
 
 # Run stays for each year and then the rest of the pipeline
-bash run_pipeline.sh --skip-dbscan --skip-timezone --skip-hw AR 2023 America/Buenos_Aires
-bash run_pipeline.sh --skip-dbscan --skip-timezone --skip-hw AR 2024 America/Buenos_Aires
-bash run_pipeline.sh --skip-stops AR 2024 America/Buenos_Aires
-bash run_pipeline.sh --skip-stops --skip-dbscan --skip-timezone AR 2024 America/Buenos_Aires
+bash run_pipeline.sh --skip-dbscan --skip-timezone --skip-hw CO 2023 America/Bogota
+bash run_pipeline.sh --skip-dbscan --skip-timezone --skip-hw CO 2024 America/Bogota
+bash run_pipeline.sh --skip-stops CO 2024 America/Bogota
+
+bash run_pipeline.sh --skip-stops --skip-dbscan --skip-timezone CO 2024 America/Bogota

@@ -139,49 +139,46 @@ base AS (
 cluster_day_counts AS (
   SELECT
     uid,
-    year,
     cluster_label,
     COUNT(DISTINCT date) AS unique_days_visited
   FROM base
-  WHERE cluster_label >= 0  -- MOVED filter here - only for counting
-  GROUP BY uid, year, cluster_label
+  WHERE cluster_label >= 0
+  GROUP BY uid, cluster_label
 ),
 
 home_candidates AS (
   SELECT
     uid,
-    year,
     cluster_label,
-    cluster_latitude,
-    cluster_longitude,
+    AVG(cluster_latitude) AS cluster_latitude,
+    AVG(cluster_longitude) AS cluster_longitude,
     COUNT(*) AS home_time_visits,
     COUNT(DISTINCT date) AS home_time_unique_days
   FROM base
   WHERE
-    cluster_label >= 0 AND  -- ADD filter here - exclude noise from home detection
-    ((weekend = TRUE) OR  -- Weekends any time
+    cluster_label >= 0 AND
+    ((weekend = TRUE) OR
     (weekend = FALSE AND (hour >= ${HOME_HOUR_EVENING} OR hour < ${HOME_HOUR_MORNING})))  -- Weekdays during home hours
-  GROUP BY uid, year, cluster_label, cluster_latitude, cluster_longitude
+  GROUP BY uid, cluster_label
 ),
 
 home_locations AS (
   SELECT
     h.*,
     ROW_NUMBER() OVER (
-      PARTITION BY h.uid, h.year
+      PARTITION BY h.uid
       ORDER BY h.home_time_visits DESC, h.home_time_unique_days DESC, h.cluster_label
     ) AS home_rank,
     dc.unique_days_visited
   FROM home_candidates h
   JOIN cluster_day_counts dc
-    ON h.uid = dc.uid AND h.year = dc.year AND h.cluster_label = dc.cluster_label
+    ON h.uid = dc.uid AND h.cluster_label = dc.cluster_label
   WHERE dc.unique_days_visited >= ${HOME_MIN_DAYS}  -- Must be visited at least N different days
 ),
 
 final_home_locations AS (
   SELECT
     uid,
-    year,
     cluster_label AS home_cluster_label,
     cluster_latitude AS home_latitude,
     cluster_longitude AS home_longitude,
@@ -194,24 +191,22 @@ final_home_locations AS (
 work_candidates AS (
   SELECT
     uid,
-    year,
     cluster_label,
-    cluster_latitude,
-    cluster_longitude,
+    AVG(cluster_latitude) AS cluster_latitude,
+    AVG(cluster_longitude) AS cluster_longitude,
     COUNT(*) AS work_time_visits,
     COUNT(DISTINCT date) AS work_time_unique_days
   FROM base
   WHERE
-    cluster_label >= 0 AND  -- ADD filter here - exclude noise from work detection
+    cluster_label >= 0 AND
     weekend = FALSE AND hour >= ${WORK_HOUR_START} AND hour <= ${WORK_HOUR_END}  -- Weekdays during work hours
-  GROUP BY uid, year, cluster_label, cluster_latitude, cluster_longitude
+  GROUP BY uid, cluster_label
 ),
 
 work_candidates_filtered AS (
   SELECT
     w.*,
     h.home_cluster_label,
-    -- Calculate distance between this cluster and home cluster (in meters)
     ST_DISTANCE(
       ST_GEOGPOINT(w.cluster_longitude, w.cluster_latitude),
       ST_GEOGPOINT(h.home_longitude, h.home_latitude)
@@ -224,19 +219,18 @@ work_candidates_filtered AS (
     END AS is_valid_work_candidate
   FROM work_candidates w
   LEFT JOIN final_home_locations h
-    ON w.uid = h.uid AND w.year = h.year
+    ON w.uid = h.uid
 ),
 
 work_locations AS (
   SELECT
     uid,
-    year,
     cluster_label AS work_cluster_label,
     cluster_latitude AS work_latitude,
     cluster_longitude AS work_longitude,
     work_time_visits,
     ROW_NUMBER() OVER (
-      PARTITION BY uid, year
+      PARTITION BY uid
       ORDER BY work_time_visits DESC, work_time_unique_days DESC, cluster_label
     ) AS work_rank
   FROM work_candidates_filtered
@@ -248,7 +242,6 @@ work_locations AS (
 final_work_locations AS (
   SELECT
     uid,
-    year,
     work_cluster_label,
     work_latitude,
     work_longitude,
@@ -266,56 +259,22 @@ location_type_assignment AS (
       WHEN w.work_cluster_label IS NOT NULL AND b.cluster_label = w.work_cluster_label THEN 'W'
       ELSE 'O'
     END AS location_type
-  FROM base b  -- Now includes ALL records
+  FROM base b
   LEFT JOIN final_home_locations h
-    ON b.uid = h.uid AND b.year = h.year AND b.cluster_label = h.home_cluster_label
+    ON b.uid = h.uid
   LEFT JOIN final_work_locations w
-    ON b.uid = w.uid AND b.year = w.year AND b.cluster_label = w.work_cluster_label
-),
-
--- Calculate location labels (1, 2, 3, etc.) based on changes over years
-location_changes AS (
-  SELECT
-    uid,
-    location_type,
-    cluster_label,
-    year,
-    -- For home locations
-    CASE WHEN location_type = 'H' THEN
-      DENSE_RANK() OVER (
-        PARTITION BY uid, location_type
-        ORDER BY year, cluster_label
-      )
-      ELSE -1
-    END AS home_change_rank,
-    -- For work locations
-    CASE WHEN location_type = 'W' THEN
-      DENSE_RANK() OVER (
-        PARTITION BY uid, location_type
-        ORDER BY year, cluster_label
-      )
-      ELSE -1
-    END AS work_change_rank
-  FROM location_type_assignment
-  WHERE cluster_label >= 0  -- Only track changes for actual clusters
-  GROUP BY uid, location_type, cluster_label, year
+    ON b.uid = w.uid
 ),
 
 final_result AS (
   SELECT
-    t.*,
+    *,
     CASE
-      WHEN t.cluster_label = -1 THEN -1  -- Noise points get -1 location_label
-      WHEN t.location_type = 'H' THEN c.home_change_rank
-      WHEN t.location_type = 'W' THEN c.work_change_rank
+      WHEN location_type = 'H' THEN 1
+      WHEN location_type = 'W' THEN 1
       ELSE -1
     END AS location_label
-  FROM location_type_assignment t
-  LEFT JOIN location_changes c
-    ON t.uid = c.uid
-    AND t.location_type = c.location_type
-    AND t.cluster_label = c.cluster_label
-    AND t.year = c.year
+  FROM location_type_assignment
 )
 
 SELECT
