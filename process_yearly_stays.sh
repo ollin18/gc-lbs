@@ -160,10 +160,16 @@ flags AS (
     timestamp,
     distance,
     time_diff,
-    distance <= ${DISTANCE_THRESHOLD} AS within_radius,
-    (time_diff <= ${TIME_THRESHOLD} OR time_diff IS NULL) AS within_time,
-    (distance <= ${DISTANCE_THRESHOLD} AND (time_diff <= ${TIME_THRESHOLD} OR time_diff IS NULL)) AS stationary
+    LAG(distance) OVER w AS prev_distance,
+    LAG(time_diff) OVER w AS prev_time_diff,
+    -- A ping is part of a stay if it's close in time and space to NEXT point OR PREVIOUS point
+    (
+      (distance <= ${DISTANCE_THRESHOLD} AND (time_diff <= ${TIME_THRESHOLD} OR time_diff IS NULL))
+      OR
+      (LAG(distance) OVER w <= ${DISTANCE_THRESHOLD} AND (LAG(time_diff) OVER w <= ${TIME_THRESHOLD} OR LAG(time_diff) OVER w IS NULL))
+    ) AS stationary
   FROM calc
+  WINDOW w AS (PARTITION BY device_id ORDER BY timestamp)
 ),
 events AS (
   SELECT
