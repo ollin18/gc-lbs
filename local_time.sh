@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+# Fixed timezone mode (skip spatial join)
+FIXED_TZ_MODE=false
+
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY DEFAULT_TIMEZONE"
@@ -10,10 +13,11 @@ show_help() {
   echo "  -o, --output-bucket BUCKET Output GCS bucket (default: $OUTPUT_BUCKET)"
   echo "  -d, --dataset DATASET      BigQuery dataset name (default: $DATASET)"
   echo "  -t, --tz-table TABLE       Timezone lookup table (default: $TZ_TABLE)"
+  echo "  --fixed-tz                 Use fixed timezone (skip spatial join)"
   echo "  -h, --help                 Show this help message"
   echo "Examples:"
-  echo "  $0 CO America/Bogota       # Process Colombia with Bogota timezone as default"
-  echo "  $0 MX America/Mexico_City  # Process Mexico with Mexico City timezone as default"
+  echo "  $0 CO America/Bogota            # Process Colombia with spatial join"
+  echo "  $0 --fixed-tz MX America/Mexico_City  # Process Mexico with fixed timezone"
   exit 1
 }
 
@@ -39,6 +43,10 @@ while [[ $# -gt 0 ]]; do
     -t|--tz-table)
       TZ_TABLE="$2"
       shift 2
+      ;;
+    --fixed-tz)
+      FIXED_TZ_MODE=true
+      shift
       ;;
     -h|--help)
       show_help
@@ -70,7 +78,12 @@ echo "Project: $PROJECT"
 echo "Dataset: $DATASET"
 echo "Country: $COUNTRY"
 echo "Default Timezone: $DEFAULT_TZ"
-echo "Timezone Table: $TZ_TABLE"
+if $FIXED_TZ_MODE; then
+  echo "Mode: Fixed Timezone (skipping spatial join)"
+else
+  echo "Mode: Spatial Join"
+  echo "Timezone Table: $TZ_TABLE"
+fi
 
 # Build paths
 TNAME="${COUNTRY}_clustered_stops"
@@ -86,7 +99,60 @@ bq load \
   ${SOURCE_URI}
 
 #query
-QUERY=$(cat <<EOF
+if $FIXED_TZ_MODE; then
+  # Fixed timezone mode: skip spatial join, use DEFAULT_TZ for all rows
+  echo "Using fixed timezone mode — all rows will use: ${DEFAULT_TZ}"
+  QUERY=$(cat <<EOF
+EXPORT DATA
+OPTIONS (
+  uri='${EXPORT_URI}',
+  format='PARQUET',
+  compression='SNAPPY',
+  overwrite=true
+)
+AS
+
+WITH stops_clustered AS (
+  SELECT
+    uid,
+    stop_event,
+    CAST(start_timestamp AS INT64) AS start_timestamp,
+    CAST(end_timestamp AS INT64) AS end_timestamp,
+    CAST(stop_duration AS INT64) AS stop_duration,
+    stop_latitude,
+    stop_longitude,
+    cluster_label,
+    cluster_counts,
+    cluster_latitude,
+    cluster_longitude
+  FROM \`${TABLE}\`
+),
+stops_with_tz AS (
+  SELECT
+    *,
+    '${DEFAULT_TZ}' AS timezone
+  FROM stops_clustered
+)
+
+SELECT
+  *,
+  timezone AS inputed_timezone,
+  DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}') AS stop_datetime,
+  DATETIME(TIMESTAMP_SECONDS(end_timestamp), '${DEFAULT_TZ}') AS end_stop_datetime,
+  EXTRACT(DATE FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS date,
+  EXTRACT(YEAR FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS year,
+  EXTRACT(MONTH FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS month,
+  EXTRACT(DAY FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS day,
+  EXTRACT(HOUR FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS hour,
+  EXTRACT(DAYOFWEEK FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) AS weekday,
+  IF(EXTRACT(DAYOFWEEK FROM DATETIME(TIMESTAMP_SECONDS(start_timestamp), '${DEFAULT_TZ}')) IN (1, 7), TRUE, FALSE) AS weekend,
+  EXTRACT(DATE FROM DATETIME(TIMESTAMP_SECONDS(end_timestamp), '${DEFAULT_TZ}')) AS end_date
+FROM stops_with_tz;
+EOF
+)
+else
+  # Spatial join mode: lookup timezone from polygon table
+  QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (
   uri='${EXPORT_URI}',
@@ -144,6 +210,7 @@ SELECT
 FROM stops_with_tz;
 EOF
 )
+fi
 
 echo "Running timezone conversion query..."
 bq query --use_legacy_sql=false "$QUERY"

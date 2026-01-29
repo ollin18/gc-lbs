@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+# Input format defaults (can be overridden by environment)
+: "${INPUT_FORMAT:=auto}"
+: "${CSV_SEPARATOR:=$'\t'}"
+: "${CSV_HEADER:=true}"
+: "${COL_DEVICE_ID:=device_id}"
+: "${COL_LATITUDE:=latitude}"
+: "${COL_LONGITUDE:=longitude}"
+: "${COL_TIMESTAMP:=timestamp}"
+
 # Display help
 show_help() {
   echo "Usage: $0 [options] COUNTRY YEAR"
@@ -12,6 +21,9 @@ show_help() {
   echo "  -dt, --distance METERS     Distance threshold in meters (default: $DISTANCE_THRESHOLD)"
   echo "  -tt, --time SECONDS        Time threshold in seconds (default: $TIME_THRESHOLD)"
   echo "  -sd, --stop-duration MS    Minimum stop duration in ms (default: $MIN_STOP_DURATION)"
+  echo "  --format FORMAT            Input format: auto, parquet, csv (default: auto)"
+  echo "  --csv-sep SEP              CSV separator (default: tab)"
+  echo "  --no-header                CSV has no header row"
   echo "  -h, --help                 Show this help message"
   exit 1
 }
@@ -24,6 +36,31 @@ show_help() {
 # DISTANCE_THRESHOLD=20          # meters
 # TIME_THRESHOLD=3600            # seconds (1 hour)
 # MIN_STOP_DURATION=300000       # milliseconds (5 minutes)
+
+# Function to detect input format from GCS
+detect_format() {
+  local uri="$1"
+  local base_path="${uri%/*}"  # Remove the wildcard part
+
+  # List files in the GCS path and check extensions
+  local files=$(gsutil ls "${base_path}/" 2>/dev/null | head -20)
+
+  for f in $files; do
+    case "$f" in
+      *.parquet|*.snappy.parquet)
+        echo "parquet"
+        return
+        ;;
+      *.csv|*.csv.gz)
+        echo "csv"
+        return
+        ;;
+    esac
+  done
+
+  # Default to parquet if no matching files found
+  echo "parquet"
+}
 
 # Parse command line options
 while [[ $# -gt 0 ]]; do
@@ -55,6 +92,18 @@ while [[ $# -gt 0 ]]; do
     -sd|--stop-duration)
       MIN_STOP_DURATION="$2"
       shift 2
+      ;;
+    --format)
+      INPUT_FORMAT="$2"
+      shift 2
+      ;;
+    --csv-sep)
+      CSV_SEPARATOR="$2"
+      shift 2
+      ;;
+    --no-header)
+      CSV_HEADER=false
+      shift
       ;;
     -h|--help)
       show_help
@@ -91,22 +140,92 @@ echo "Year: $YEAR"
 echo "Distance threshold: $DISTANCE_THRESHOLD meters"
 echo "Time threshold: $TIME_THRESHOLD seconds"
 echo "Minimum stop duration: $MIN_STOP_DURATION ms"
+echo "Input format: $INPUT_FORMAT"
+echo "Column mapping: device_id=${COL_DEVICE_ID}, latitude=${COL_LATITUDE}, longitude=${COL_LONGITUDE}, timestamp=${COL_TIMESTAMP}"
 
 # Build paths
 TNAME="${COUNTRY}${YEAR}"
 TABLE_NAME="${DATASET}.${TNAME}"
-SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.parquet"
 TABLE="${PROJECT}.${DATASET}.${TNAME}"
 EXPORT_URI="gs://${OUTPUT_BUCKET}/stops/${COUNTRY}/${YEAR}/part-*.parquet"
 
+# Detect format if auto
+DETECTED_FORMAT="$INPUT_FORMAT"
+if [ "$INPUT_FORMAT" = "auto" ]; then
+  # Try to detect format from parquet first, then csv
+  PARQUET_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.parquet"
+  CSV_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv*"
+
+  if gsutil ls "${PARQUET_URI}" &>/dev/null; then
+    DETECTED_FORMAT="parquet"
+    SOURCE_URI="$PARQUET_URI"
+  elif gsutil ls "${CSV_URI}" &>/dev/null; then
+    DETECTED_FORMAT="csv"
+    # Check if .csv.gz or .csv
+    if gsutil ls "gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv.gz" &>/dev/null; then
+      SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv.gz"
+    else
+      SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv"
+    fi
+  else
+    echo "Error: No parquet or csv files found in gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/"
+    exit 1
+  fi
+  echo "Auto-detected input format: $DETECTED_FORMAT"
+elif [ "$INPUT_FORMAT" = "parquet" ]; then
+  SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.parquet"
+else
+  # CSV format - check for compressed or uncompressed
+  if gsutil ls "gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv.gz" &>/dev/null; then
+    SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv.gz"
+  else
+    SOURCE_URI="gs://${INPUT_BUCKET}/${COUNTRY}/${YEAR}/*.csv"
+  fi
+fi
+
 echo "Loading data from $SOURCE_URI to $TABLE_NAME..."
-bq load \
-  --source_format=PARQUET \
-  --autodetect \
-  ${TABLE_NAME} \
-  ${SOURCE_URI}
+
+if [ "$DETECTED_FORMAT" = "parquet" ]; then
+  bq load \
+    --source_format=PARQUET \
+    --autodetect \
+    ${TABLE_NAME} \
+    ${SOURCE_URI}
+else
+  # CSV loading with configurable options
+  SKIP_ROWS=0
+  if [ "$CSV_HEADER" = "true" ]; then
+    SKIP_ROWS=1
+  fi
+
+  # Map CSV separator to BigQuery field delimiter
+  FIELD_DELIMITER="$CSV_SEPARATOR"
+
+  bq load \
+    --source_format=CSV \
+    --autodetect \
+    --skip_leading_rows=${SKIP_ROWS} \
+    --field_delimiter="${FIELD_DELIMITER}" \
+    --allow_quoted_newlines \
+    ${TABLE_NAME} \
+    ${SOURCE_URI}
+fi
+
+# Check if column renaming is needed (column names differ from standard)
+NEEDS_RENAME=false
+if [ "$COL_DEVICE_ID" != "device_id" ] || [ "$COL_LATITUDE" != "latitude" ] || \
+   [ "$COL_LONGITUDE" != "longitude" ] || [ "$COL_TIMESTAMP" != "timestamp" ]; then
+  NEEDS_RENAME=true
+fi
 
 #query
+# Build column selection based on mapping
+if $NEEDS_RENAME; then
+  COL_SELECT="${COL_DEVICE_ID} AS device_id, ${COL_LATITUDE} AS latitude, ${COL_LONGITUDE} AS longitude, ${COL_TIMESTAMP} AS timestamp"
+else
+  COL_SELECT="device_id, latitude, longitude, timestamp"
+fi
+
 QUERY=$(cat <<EOF
 EXPORT DATA
 OPTIONS (
@@ -119,10 +238,7 @@ AS
 
 WITH base AS (
   SELECT DISTINCT
-    device_id,
-    latitude,
-    longitude,
-    timestamp
+    ${COL_SELECT}
   FROM \`${TABLE}\`
 ),
 ordered_base AS (

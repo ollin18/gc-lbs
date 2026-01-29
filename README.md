@@ -56,6 +56,61 @@ You can customize the pipeline with various command-line options:
   CO 2022 America/Bogota
 ```
 
+### Input Formats
+
+The pipeline supports multiple input formats with automatic detection:
+
+```bash
+# Auto-detect format (default) - checks for parquet first, then CSV
+./run_pipeline.sh CO 2022 America/Bogota
+
+# Explicitly specify parquet format
+./run_pipeline.sh --format parquet CO 2022 America/Bogota
+
+# Use CSV files (supports .csv and .csv.gz)
+./run_pipeline.sh --format csv CO 2022 America/Bogota
+
+# CSV with custom separator (e.g., comma instead of tab)
+./run_pipeline.sh --format csv --csv-sep "," CO 2022 America/Bogota
+
+# CSV without header row
+./run_pipeline.sh --format csv --no-header CO 2022 America/Bogota
+```
+
+### Column Mapping
+
+If your input files use different column names, you can map them to the expected schema:
+
+```bash
+# Map vendor-specific column names to standard names
+./run_pipeline.sh \
+  --col device_id=aid \
+  --col latitude=lat \
+  --col longitude=lon \
+  --col timestamp=ts \
+  CO 2022 America/Bogota
+```
+
+The pipeline expects these four columns (with configurable source names):
+- `device_id` - Unique device identifier
+- `latitude` - Latitude coordinate
+- `longitude` - Longitude coordinate
+- `timestamp` - Unix timestamp (milliseconds)
+
+### Fixed Timezone Mode
+
+For regions that fall entirely within a single timezone, you can skip the spatial join against timezone polygons for faster processing:
+
+```bash
+# Use fixed timezone (skip spatial join)
+./run_pipeline.sh --fixed-tz MX 2023 America/Mexico_City
+```
+
+This is useful when:
+- Processing data for a single city or region
+- The timezone lookup table doesn't have coverage for your area
+- You want faster processing and know all data is in one timezone
+
 ### Running Specific Steps
 
 You can skip any steps you don't need:
@@ -72,7 +127,7 @@ You can skip any steps you don't need:
 Each step can be run independently:
 
 ```bash
-# Process stops
+# Process stops (parquet input)
 ./process_yearly_stays.sh \
   --project my-gcp-project \
   --dataset my_dataset \
@@ -81,15 +136,25 @@ Each step can be run independently:
   --stop-duration 600000 \ # Custom minimum stop duration (ms)
   CO 2022
 
+# Process stops (CSV input with column mapping)
+./process_yearly_stays.sh \
+  --format csv \
+  --csv-sep "," \
+  CO 2022
+
 # Run DBSCAN clustering
 ./dbscan.sh \
   --dbscan-dist 30 \      # Custom DBSCAN distance (meters)
   --min-points 3 \        # Custom minimum points per cluster
   CO
 
-# Convert to local timezone
+# Convert to local timezone (with spatial join)
 ./local_time.sh \
   CO America/Bogota
+
+# Convert to local timezone (fixed timezone, no spatial join)
+./local_time.sh --fixed-tz \
+  MX America/Mexico_City
 
 # Identify home and work locations
 ./get_hw.sh \
@@ -237,7 +302,9 @@ ORDER BY h.uid, h.year;
 
 - **Missing Home/Work Locations**: Adjust the minimum days thresholds if users aren't getting home/work locations assigned.
 - **Incorrect Clustering**: Modify DBSCAN parameters if stops aren't being grouped properly.
-- **Timezone Issues**: Check that the timezone lookup table has complete coverage for your country.
+- **Timezone Issues**: Check that the timezone lookup table has complete coverage for your country. Alternatively, use `--fixed-tz` to skip the spatial join.
+- **CSV Loading Errors**: Ensure your CSV separator matches the actual file format. Use `--csv-sep` to specify the correct delimiter.
+- **Column Not Found**: Use `--col` mappings to rename your input columns to the expected names (device_id, latitude, longitude, timestamp).
 
 ## License
 

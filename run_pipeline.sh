@@ -7,6 +7,20 @@ RUN_DBSCAN=true
 RUN_TIMEZONE=true
 RUN_HW=true
 
+# Input format and fixed timezone flags
+INPUT_FORMAT="auto"  # auto, parquet, csv
+CSV_SEPARATOR=$'\t'  # Default: tab
+CSV_HEADER=true
+FIXED_TZ=false
+
+# Column mapping (standard_name=actual_name)
+declare -A COLUMN_MAP=(
+  ["device_id"]="device_id"
+  ["latitude"]="latitude"
+  ["longitude"]="longitude"
+  ["timestamp"]="timestamp"
+)
+
 # Help function
 show_help() {
   echo "Usage: $0 [options] COUNTRY YEAR TIMEZONE"
@@ -23,6 +37,11 @@ show_help() {
   echo "  -i, --input-bucket BUCKET  Input GCS bucket (default: $INPUT_BUCKET)"
   echo "  -o, --output-bucket BUCKET Output GCS bucket (default: $OUTPUT_BUCKET)"
   echo "  -d, --dataset DATASET      BigQuery dataset name (default: $DATASET)"
+  echo "  --format FORMAT            Input format: auto, parquet, csv (default: auto)"
+  echo "  --csv-sep SEP              CSV separator (default: tab)"
+  echo "  --no-header                CSV has no header row"
+  echo "  --col MAPPING              Column mapping (e.g., --col device_id=aid)"
+  echo "  --fixed-tz                 Use fixed timezone (skip spatial join)"
   echo "  --skip-stops               Skip the stops detection step"
   echo "  --skip-dbscan              Skip the DBSCAN clustering step"
   echo "  --skip-timezone            Skip the timezone conversion step"
@@ -51,6 +70,28 @@ while [[ $# -gt 0 ]]; do
     -d|--dataset)
       DATASET="$2"
       shift 2
+      ;;
+    --format)
+      INPUT_FORMAT="$2"
+      shift 2
+      ;;
+    --csv-sep)
+      CSV_SEPARATOR="$2"
+      shift 2
+      ;;
+    --no-header)
+      CSV_HEADER=false
+      shift
+      ;;
+    --col)
+      # Parse column mapping: device_id=aid
+      IFS='=' read -r std_col actual_col <<< "$2"
+      COLUMN_MAP["$std_col"]="$actual_col"
+      shift 2
+      ;;
+    --fixed-tz)
+      FIXED_TZ=true
+      shift
       ;;
     --skip-stops)
       RUN_STOPS=false
@@ -130,50 +171,12 @@ export DISTANCE_THRESHOLD TIME_THRESHOLD MIN_STOP_DURATION
 export DBSCAN_DISTANCE DBSCAN_MIN_POINTS
 export HOME_MIN_DAYS HOME_HOUR_EVENING HOME_HOUR_MORNING
 export WORK_MIN_DAYS WORK_HOUR_START WORK_HOUR_END MIN_DISTANCE_HOME_WORK
-
-# Parse command line options
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -p|--project)
-      PROJECT="$2"
-      shift 2
-      ;;
-    -i|--input-bucket)
-      INPUT_BUCKET="$2"
-      shift 2
-      ;;
-    -o|--output-bucket)
-      OUTPUT_BUCKET="$2"
-      shift 2
-      ;;
-    -d|--dataset)
-      DATASET="$2"
-      shift 2
-      ;;
-    --skip-stops)
-      RUN_STOPS=false
-      shift
-      ;;
-    --skip-dbscan)
-      RUN_DBSCAN=false
-      shift
-      ;;
-    --skip-timezone)
-      RUN_TIMEZONE=false
-      shift
-      ;;
-    --skip-hw)
-      RUN_HW=false
-      shift
-      ;;
-    -h|--help)
-      show_help
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
+export INPUT_FORMAT CSV_SEPARATOR CSV_HEADER FIXED_TZ
+# Export column mappings
+export COL_DEVICE_ID="${COLUMN_MAP[device_id]}"
+export COL_LATITUDE="${COLUMN_MAP[latitude]}"
+export COL_LONGITUDE="${COLUMN_MAP[longitude]}"
+export COL_TIMESTAMP="${COLUMN_MAP[timestamp]}"
 
 echo "=========================================================="
 echo "LBS Data Processing Pipeline"
@@ -186,6 +189,17 @@ echo "  Year: $YEAR"
 echo "  Timezone: $TIMEZONE"
 echo "  Input Bucket: $INPUT_BUCKET"
 echo "  Output Bucket: $OUTPUT_BUCKET"
+echo "  Input Format: $INPUT_FORMAT"
+echo "  Fixed Timezone: $(if $FIXED_TZ; then echo "Yes"; else echo "No (spatial join)"; fi)"
+if [ "$INPUT_FORMAT" = "csv" ]; then
+  echo "  CSV Separator: '${CSV_SEPARATOR}'"
+  echo "  CSV Header: $CSV_HEADER"
+fi
+echo "  Column Mapping:"
+echo "    device_id -> $COL_DEVICE_ID"
+echo "    latitude -> $COL_LATITUDE"
+echo "    longitude -> $COL_LONGITUDE"
+echo "    timestamp -> $COL_TIMESTAMP"
 echo "=========================================================="
 echo "Steps to run:"
 echo "  Stops Detection: $(if $RUN_STOPS; then echo "Yes"; else echo "Skip"; fi)"
@@ -228,7 +242,11 @@ fi
 # Step 3: Convert to local timezone
 if $RUN_TIMEZONE; then
   echo "Step 3: Running timezone conversion..."
-  ${TIMEZONE_SCRIPT} ${COMMON_PARAMS} ${COUNTRY} ${TIMEZONE}
+  FIXED_TZ_FLAG=""
+  if $FIXED_TZ; then
+    FIXED_TZ_FLAG="--fixed-tz"
+  fi
+  ${TIMEZONE_SCRIPT} ${COMMON_PARAMS} ${FIXED_TZ_FLAG} ${COUNTRY} ${TIMEZONE}
   echo "Timezone conversion completed."
 else
   echo "Step 3: Skipping timezone conversion."
